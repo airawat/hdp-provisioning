@@ -26,7 +26,7 @@ myVMSku="Standard_DS12"
 myAdminUID="cddadmin"
 myAdminRSASSHPubKey=<Path to SSH Public Key>
 
-myBaseHdpNodeOsImage="hdpNodeOsImage"
+myBaseHdpNodeOsImage="hdpNodeBaseImage"
 
 # az vm image list --offer CentOS --all --output table | grep *OpenLogic* | grep *7.3*
 # az vm list-sizes --location eastus --output table
@@ -77,15 +77,21 @@ SSH key for access
 # ======================================================================================================
 
 # Variables
+myImageResourceGroup="hdp-util-rg"
 myImageVmName="hdpImageVm"
 myImageVmPublicIp="hdpImageVmPip"
 myImageVmNic="hdpImageVmNic"
 myImageVmOsDiskName="$myImageVmName-osdisk"
 
+
+az group create \
+--name $myResourceGroup \
+--location $myAzureLocation
+
 # I1) Create NIC for the image VM
 # ======================================================================================================
 az network nic create \
-  --resource-group $myResourceGroup \
+  --resource-group $myImageResourceGroup \
   --name $myImageVmNic \
   --vnet-name $myVnet \
   --subnet $mySubnet \
@@ -95,7 +101,8 @@ az network nic create \
 # I2) Create the image VM
 # ======================================================================================================
 az vm create \
---resource-group $myResourceGroup \
+  --resource-group $myImageResourceGroup \
+  --resource-group $ \
 --name  $myImageVmName \
 --admin-username $myAdminUID \
 --ssh-key-value akhanolk_cb.pub \
@@ -175,31 +182,38 @@ net.ipv4.tcp_low_latency=1
 net.ipv4.tcp_adv_win_scale=1" |sudo tee -a /etc/sysctl.conf
 sudo sysctl -p
 
+# I3.8. Deprovision user
+waagent -deprovision+user
+
 # This concludes prep of the image VM;
 # The next few steps cover creating an image from this VM
 
 # ======================================================================================================
 # CREATE IMAGE - run on machine with az cli
 # ======================================================================================================
+myImageResourceGroup="hdp-util-rg"
 
 # C1. Deallocate (take a power nap)
 
 az vm deallocate \
---resource-group $myResourceGroup \
+--resource-group $myImageResourceGroup \
 --name $myImageVmName
 
 # C2. Generalize
 
 az vm generalize \
---resource-group $myResourceGroup \
+--resource-group $myImageResourceGroup \
 --name $myImageVmName
 
 # C3. Create image
 
 az image create \
---resource-group $myResourceGroup \
+--resource-group $myImageResourceGroup \
 --name $myBaseHdpNodeOsImage \
 --source $myImageVmName
+
+# C4.  Delete VM
+# You can now delete the VM, its OS disk, NIC and NSG if any
 
 
 # ======================================================================================================
@@ -214,6 +228,7 @@ dataDiskName2=$vmName-mysql
 dataDiskName3=$vmName-kdc
 osDiskName=$vmName-osDisk
 vmNic=$vmName-nic
+myBaseHdpNodeOsImage=/subscriptions/b40723bf-3a19-4934-ba04-1dea9a3129b5/resourceGroups/hdp-util-rg/providers/Microsoft.Compute/images/hdpNodeBaseImage
 
 az network nic create \
   --resource-group $myResourceGroup \
@@ -232,15 +247,15 @@ az vm create \
 --resource-group $myResourceGroup \
 --name $vmName \
 --image $myBaseHdpNodeOsImage \
---admin-username akhanolk \
+--admin-username cddadmin \
 --ssh-key-value akhanolk_cb.pub \
 --os-disk-name $osDiskName \
 --public-ip-address "" \
 --size $myVMSku \
 --nics $vmNic  
 
-az vm disk attach --disk $dataDiskName1 --resource-group $myResourceGroup --vm-name $vmName --lun 1 &
-az vm disk attach --disk $dataDiskName2 --resource-group $myResourceGroup --vm-name $vmName --lun 2 &
+az vm disk attach --disk $dataDiskName1 --resource-group $myResourceGroup --vm-name $vmName --lun 1 
+az vm disk attach --disk $dataDiskName2 --resource-group $myResourceGroup --vm-name $vmName --lun 2 
 az vm disk attach --disk $dataDiskName3 --resource-group $myResourceGroup --vm-name $vmName --lun 3
 
 # ======================================================================================================
@@ -254,6 +269,8 @@ dataDiskName1=$vmName-data1
 dataDiskName2=$vmName-data2
 osDiskName=$vmName-osDisk
 vmNic=$vmName-nic
+myBaseHdpNodeOsImage=/subscriptions/b40723bf-3a19-4934-ba04-1dea9a3129b5/resourceGroups/hdp-util-rg/providers/Microsoft.Compute/images/hdpNodeBaseImage
+
 
 az network nic create \
   --resource-group $myResourceGroup \
@@ -271,14 +288,14 @@ az vm create \
 --resource-group $myResourceGroup \
 --name $vmName \
 --image $myBaseHdpNodeOsImage \
---admin-username akhanolk \
+--admin-username cddadmin \
 --ssh-key-value akhanolk_cb.pub \
 --os-disk-name $osDiskName \
 --public-ip-address "" \
 --size $myVMSku \
 --nics $vmNic  
 
-az vm disk attach --disk $dataDiskName1 --resource-group $myResourceGroup --vm-name $vmName --lun 1 &
+az vm disk attach --disk $dataDiskName1 --resource-group $myResourceGroup --vm-name $vmName --lun 1 
 az vm disk attach --disk $dataDiskName2 --resource-group $myResourceGroup --vm-name $vmName --lun 2 
 
 
@@ -294,6 +311,8 @@ do
 	dataDiskName3=$vmName-data3
 	osDiskName=$vmName-osDisk
 	vmNic=$vmName-nic
+	myBaseHdpNodeOsImage=/subscriptions/b40723bf-3a19-4934-ba04-1dea9a3129b5/resourceGroups/hdp-util-rg/providers/Microsoft.Compute/images/hdpNodeBaseImage
+
 
 	az network nic create --resource-group $myResourceGroup --name $vmNic --vnet-name $myVnet --subnet $mySubnet --network-security-group $myVmNicNsg --public-ip-address "" 
 	az disk create -g $myResourceGroup -n $dataDiskName1 --size-gb 500 &
@@ -302,7 +321,7 @@ do
 
 	az vm create \
 	--resource-group $myResourceGroup --name $vmName --image $myBaseHdpNodeOsImage \
-	--admin-username akhanolk --ssh-key-value akhanolk_cb.pub --os-disk-name $osDiskName \
+	--admin-username cddadmin --ssh-key-value akhanolk_cb.pub --os-disk-name $osDiskName \
 	--public-ip-address ""  --size $myVMSku --nics $vmNic  --availability-set asMaster
 
 	az vm disk attach --disk $dataDiskName1 --resource-group $myResourceGroup --vm-name $vmName --lun 1 
@@ -323,6 +342,8 @@ do
 	dataDiskName3=$vmName-data3
 	osDiskName=$vmName-osDisk
 	vmNic=$vmName-nic
+	myBaseHdpNodeOsImage=/subscriptions/b40723bf-3a19-4934-ba04-1dea9a3129b5/resourceGroups/hdp-util-rg/providers/Microsoft.Compute/images/hdpNodeBaseImage
+
 
 	az network nic create --resource-group $myResourceGroup --name $vmNic --vnet-name $myVnet --subnet $mySubnet --network-security-group $myVmNicNsg --public-ip-address "" 
 	az disk create -g $myResourceGroup -n $dataDiskName1 --size-gb 500 &
@@ -331,7 +352,7 @@ do
 
 	az vm create \
 	--resource-group $myResourceGroup --name $vmName --image $myBaseHdpNodeOsImage \
-	--admin-username akhanolk --ssh-key-value akhanolk_cb.pub --os-disk-name $osDiskName \
+	--admin-username cddadmin --ssh-key-value akhanolk_cb.pub --os-disk-name $osDiskName \
 	--public-ip-address ""  --size $myVMSku --nics $vmNic  --availability-set asWorker
 
 	az vm disk attach --disk $dataDiskName1 --resource-group $myResourceGroup --vm-name $vmName --lun 1 
@@ -340,8 +361,4 @@ do
 done
 
 
-
-
-az vm disk attach -g $myResourceGroup  --vm-name hdp-sn03 --disk hdp-sn03-data1 --lun 1 
-az vm disk attach -g $myResourceGroup  --vm-name hdp-sn03 --disk hdp-sn03-data3 --lun 3 
 
