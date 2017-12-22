@@ -1,9 +1,15 @@
+
+
+
+az login
+az account set --subscription b40723bf-3a19-4934-ba04-1dea9a3129b5
+
 # ======================================================================================================
 # Variables
 # ======================================================================================================
 
-myAzureLocation="eastus"
-myResourceGroup="cdd-cluster-rg"
+myAzureLocation="centralus"
+myResourceGroup="hdp-cluster-rg"
 
 myAvailabilitySetMaster="asMaster"
 myAvailabilitySetWorker="asWorker"
@@ -13,20 +19,16 @@ myVnet="cdd-vnet"
 mySubnet="cluster-snet"
 myVmNicNsg="hdpVmNsg"
 
-myOSImage="OpenLogic:CentOS:7.3:latest"
+#myOSImage="OpenLogic:CentOS:7.3:latest"
+myOSImage="RedHat:RHEL:7.3:7.3.2017090105"
 myVMSku="Standard_DS12"
 
 myAdminUID="cddadmin"
 myAdminRSASSHPubKey=<Path to SSH Public Key>
 
-myImageVmName="hdpImageVm"
-myImageVmPublicIp="hdpImageVmPip"
-myImageVmNic="hdpImageVmNic"
-myImageVmOsDiskName="$myImageVmName-osdisk"
-
 myBaseHdpNodeOsImage="hdpNodeOsImage"
 
-# az vm image list --offer CentOS --all --output table
+# az vm image list --offer CentOS --all --output table | grep *OpenLogic* | grep *7.3*
 # az vm list-sizes --location eastus --output table
 
 # ======================================================================================================
@@ -44,7 +46,8 @@ az group create \
 az network vnet create \
 --resource-group $myResourceGroup \
 --name $myVnet --address-prefix 10.13.0.0/16 \
---subnet-name $mySubnet --subnet-prefix 10.13.1.0/24
+--subnet-name $mySubnet --subnet-prefix 10.13.1.0/24 \
+--dns-servers 10.0.0.4
 
 # G3) Create a NSG
 # ======================================================================================================
@@ -61,12 +64,23 @@ az network nsg rule create \
 
 # G5) Create availability sets
 # ======================================================================================================
-az vm availability-set create -n $myAvailabilitySetMaster -g $myResourceGroup --platform-fault-domain-count 3 --platform-update-domain-count 3 &
+az vm availability-set create -n $myAvailabilitySetMaster -g $myResourceGroup --platform-fault-domain-count 3 --platform-update-domain-count 3 
 az vm availability-set create -n $myAvailabilitySetWorker -g $myResourceGroup --platform-fault-domain-count 3 --platform-update-domain-count 10 
+
+# G6) Create a jumpbox VM with a public IP in the Vnet/Subnet created
+52.165.146.131
+cddadmin
+SSH key for access
 
 # ======================================================================================================
 # HDP BASE VM IMAGE SPECIFIC - to be run on VM
 # ======================================================================================================
+
+# Variables
+myImageVmName="hdpImageVm"
+myImageVmPublicIp="hdpImageVmPip"
+myImageVmNic="hdpImageVmNic"
+myImageVmOsDiskName="$myImageVmName-osdisk"
 
 # I1) Create NIC for the image VM
 # ======================================================================================================
@@ -76,7 +90,6 @@ az network nic create \
   --vnet-name $myVnet \
   --subnet $mySubnet \
   --network-security-group $myVmNicNsg \
-  --internal-dns-name cdd \
   --public-ip-address ""
 
 # I2) Create the image VM
@@ -90,6 +103,9 @@ az vm create \
 --size $myVMSku \
 --nics $myImageVmNic \
 --os-disk-name $myImageVmOsDiskName
+
+# Note: When I installed via CLI - I could not connect to repos to install utils below - could not connect to RHEL repos
+# For the imageVM, used portal
 
 # I3) Apply the following configurations on the image VM as root
 # ======================================================================================================
@@ -118,7 +134,7 @@ systemctl status chronyd
 sed -i s/SELINUX=enforcing/SELINUX=disabled/g /etc/sysconfig/selinux
 
 # sestatus will say enforcing until reboot
-# With OpenLogic CentOS 7.3, I found that post reboot sestatus still said enforcing.
+# With OpenLogic CentOS 7.3 and RHEL 7.3, I found that post reboot sestatus still said enforcing.
 # Modified /etc/selinux/config that still showed as enforcing, and rebooted after which sestatus showed as disabled (prob a symlink issue)
 
 # I3.5. Start, enable name service caching daemon
